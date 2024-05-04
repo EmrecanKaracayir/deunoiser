@@ -1,0 +1,206 @@
+#!/usr/bin/python
+
+from __future__ import print_function
+
+import tensorflow.python.keras as keras
+
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.layers import Input
+from tensorflow.python.keras.layers import Dense
+from tensorflow.python.keras.layers import GRU
+from tensorflow.python.keras import regularizers
+import h5py
+
+from tensorflow.python.keras.constraints import Constraint
+from tensorflow.python.keras import backend as K
+import numpy as np
+
+from dump_rnn import dump_model
+
+
+def my_crossentropy(y_true, y_pred):
+    return K.mean(
+        2 * K.abs(y_true - 0.5) * K.binary_crossentropy(y_pred, y_true), axis=-1
+    )
+
+
+def mymask(y_true):
+    return K.minimum(y_true + 1.0, 1.0)
+
+
+def msse(y_true, y_pred):
+    return K.mean(mymask(y_true) * K.square(K.sqrt(y_pred) - K.sqrt(y_true)), axis=-1)
+
+
+def mycost(y_true, y_pred):
+    return K.mean(
+        mymask(y_true)
+        * (
+            10 * K.square(K.square(K.sqrt(y_pred) - K.sqrt(y_true)))
+            + K.square(K.sqrt(y_pred) - K.sqrt(y_true))
+            + 0.01 * K.binary_crossentropy(y_pred, y_true)
+        ),
+        axis=-1,
+    )
+
+
+def my_accuracy(y_true, y_pred):
+    return K.mean(2 * K.abs(y_true - 0.5) * K.equal(y_true, K.round(y_pred)), axis=-1)
+
+
+class WeightClip(Constraint):
+    """Clips the weights incident to each hidden unit to be inside a range"""
+
+    def __init__(self, c=2):
+        self.c = c
+
+    def __call__(self, p):
+        return K.clip(p, -self.c, self.c)
+
+    def get_config(self):
+        return {"name": self.__class__.__name__, "c": self.c}
+
+
+reg = 0.000001
+constraint = WeightClip(0.499)
+
+print("Build model...")
+main_input = Input(shape=(None, 42), name="main_input")
+tmp = Dense(
+    24,
+    activation="tanh",
+    name="input_dense",
+    kernel_constraint=constraint,
+    bias_constraint=constraint,
+)(main_input)
+vad_gru = GRU(
+    24,
+    reset_after=False,
+    activation="tanh",
+    recurrent_activation="sigmoid",
+    return_sequences=True,
+    name="vad_gru",
+    kernel_regularizer=regularizers.l2(reg),
+    recurrent_regularizer=regularizers.l2(reg),
+    kernel_constraint=constraint,
+    recurrent_constraint=constraint,
+    bias_constraint=constraint,
+)(tmp)
+vad_output = Dense(
+    1,
+    activation="sigmoid",
+    name="vad_output",
+    kernel_constraint=constraint,
+    bias_constraint=constraint,
+)(vad_gru)
+noise_input = keras.layers.concatenate([tmp, vad_gru, main_input])
+noise_gru = GRU(
+    48,
+    reset_after=False,
+    activation="relu",
+    recurrent_activation="sigmoid",
+    return_sequences=True,
+    name="noise_gru",
+    kernel_regularizer=regularizers.l2(reg),
+    recurrent_regularizer=regularizers.l2(reg),
+    kernel_constraint=constraint,
+    recurrent_constraint=constraint,
+    bias_constraint=constraint,
+)(noise_input)
+denoise_input = keras.layers.concatenate([vad_gru, noise_gru, main_input])
+
+denoise_gru = GRU(
+    96,
+    reset_after=False,
+    activation="tanh",
+    recurrent_activation="sigmoid",
+    return_sequences=True,
+    name="denoise_gru",
+    kernel_regularizer=regularizers.l2(reg),
+    recurrent_regularizer=regularizers.l2(reg),
+    kernel_constraint=constraint,
+    recurrent_constraint=constraint,
+    bias_constraint=constraint,
+)(denoise_input)
+
+denoise_output = Dense(
+    22,
+    activation="sigmoid",
+    name="denoise_output",
+    kernel_constraint=constraint,
+    bias_constraint=constraint,
+)(denoise_gru)
+
+model = Model(inputs=main_input, outputs=[denoise_output, vad_output])
+
+model.compile(
+    loss=[mycost, my_crossentropy],
+    metrics=[msse],
+    optimizer="adam",
+    loss_weights=[10, 0.5],
+)
+
+
+batch_size = 32
+
+print("Loading data...")
+with h5py.File("training.h5", "r") as hf:
+    all_data = hf["data"][:]
+print("done.")
+
+window_size = 2000
+
+nb_sequences = len(all_data) // window_size
+print(nb_sequences, " sequences")
+x_train = all_data[: nb_sequences * window_size, :42]
+x_train = np.reshape(x_train, (nb_sequences, window_size, 42))
+
+y_train = np.copy(all_data[: nb_sequences * window_size, 42:64])
+y_train = np.reshape(y_train, (nb_sequences, window_size, 22))
+
+noise_train = np.copy(all_data[: nb_sequences * window_size, 64:86])
+noise_train = np.reshape(noise_train, (nb_sequences, window_size, 22))
+
+vad_train = np.copy(all_data[: nb_sequences * window_size, 86:87])
+vad_train = np.reshape(vad_train, (nb_sequences, window_size, 1))
+
+
+# In order to ensure that the various noise levels are evenly represented, we reweight the samples
+# so that low-gain, high-gain and medium-gain samples get the same total weight.
+# TODO: in the feature-generation step, ensure there are no samples where all the y's are -1.
+y = all_data[: nb_sequences * window_size, 42:64]
+y_means = np.mean(y, axis=1, where=(y != -1))
+hi = y_means > 2 / 3
+lo = y_means < 1 / 3
+med = (y_means >= 1 / 3) & (y_means <= 2 / 3)
+total = np.sum(~np.isnan(hi))
+train_weights = (
+    hi * (total / np.sum(hi)) + med * (total / np.sum(med)) + lo * (total / np.sum(lo))
+) / 3
+train_weights = np.reshape(train_weights, (nb_sequences, window_size))
+
+all_data = 0
+
+print(
+    len(x_train),
+    "train sequences. x shape =",
+    x_train.shape,
+    "y shape = ",
+    y_train.shape,
+)
+
+print("Train...")
+model.fit(
+    x_train,
+    [y_train, vad_train],
+    sample_weight=train_weights,
+    batch_size=batch_size,
+    epochs=20,
+    validation_split=0.1,
+)
+
+print('Saving keras model to "weights.hdf5"')
+model.save("weights.hdf5")
+
+print('Saving deunoiser weights to "weights.rnn"')
+dump_model(model, "weights.rnn")
