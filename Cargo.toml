@@ -12,7 +12,6 @@ default-run = "deunoiser"
 default = ["bin", "dasp"]
 
 bin = ["anyhow", "clap", "dasp_interpolate", "dasp_ring_buffer", "hound"]
-capi = ["libc"]
 train = ["anyhow", "clap", "glob", "hdf5", "hound", "ndarray", "rand"]
 
 [lib]
@@ -52,6 +51,3 @@ assert_fs = "1.0.7"
 criterion = "0.3.5"
 predicates = "2.1.1"
 static_assertions = "1.1.0"
-
-[package.metadata.capi]
-header_name = "rnnoise"

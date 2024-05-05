@@ -7,12 +7,6 @@
 
 use once_cell::sync::OnceCell;
 
-#[cfg(any(cargo_c, feature = "capi"))]
-mod capi;
-
-#[cfg(feature = "train")]
-pub mod util;
-
 #[cfg(not(feature = "train"))]
 mod util;
 
