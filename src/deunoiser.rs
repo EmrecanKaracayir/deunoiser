@@ -3,7 +3,7 @@ use std::io::{BufReader, BufWriter, Read, Seek, Write};
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Error};
-use clap::{arg, crate_version, Command};
+use clap::{arg, crate_version, ArgMatches, Command};
 use dasp_interpolate::{sinc::Sinc, Interpolator};
 use dasp_ring_buffer::Fixed;
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
@@ -233,7 +233,7 @@ fn wav_samples<R: Read + 'static>(wav: WavReader<R>) -> Box<dyn ReadSample> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let matches =
+  let matches: ArgMatches =
         Command::new("nnnoiseless")
             .version(crate_version!())
             .about("Remove noise from audio files")

@@ -62,11 +62,12 @@ pub(crate) fn compute_band_corr(out: &mut [f32], x: &[Complex], p: &[Complex]) {
   }
 
   for i in 0..(NB_BANDS - 1) {
-    let band_size = (EBAND_5MS[i + 1] - EBAND_5MS[i]) << FRAME_SIZE_SHIFT;
+    let band_size: usize =
+      (EBAND_5MS[i + 1] - EBAND_5MS[i]) << FRAME_SIZE_SHIFT;
     for j in 0..band_size {
-      let frac = j as f32 / band_size as f32;
-      let idx = (EBAND_5MS[i] << FRAME_SIZE_SHIFT) + j;
-      let corr = x[idx].re * p[idx].re + x[idx].im * p[idx].im;
+      let frac: f32 = j as f32 / band_size as f32;
+      let idx: usize = (EBAND_5MS[i] << FRAME_SIZE_SHIFT) + j;
+      let corr: f32 = x[idx].re * p[idx].re + x[idx].im * p[idx].im;
       out[i] += (1.0 - frac) * corr;
       out[i + 1] += frac * corr;
     }
@@ -101,15 +102,15 @@ static COMMON: OnceCell<CommonState> = OnceCell::new();
 fn common() -> &'static CommonState {
   if COMMON.get().is_none() {
     let pi = std::f64::consts::PI;
-    let mut window = [0.0; WINDOW_SIZE];
+    let mut window: [f32; 960] = [0.0; WINDOW_SIZE];
     for i in 0..FRAME_SIZE {
       let sin = (0.5 * pi * (i as f64 + 0.5) / FRAME_SIZE as f64).sin();
       window[i] = (0.5 * pi * sin * sin).sin() as f32;
       window[WINDOW_SIZE - i - 1] = (0.5 * pi * sin * sin).sin() as f32;
     }
-    let wnorm = 1_f32 / window.iter().map(|x| x * x).sum::<f32>();
+    let wnorm: f32 = 1_f32 / window.iter().map(|x| x * x).sum::<f32>();
 
-    let mut dct_table = [0.0; NB_BANDS * NB_BANDS];
+    let mut dct_table: [f32; 484] = [0.0; NB_BANDS * NB_BANDS];
     for i in 0..NB_BANDS {
       for j in 0..NB_BANDS {
         dct_table[i * NB_BANDS + j] =
@@ -142,14 +143,14 @@ pub(crate) fn dct(out: &mut [f32], x: &[f32]) {
 }
 
 fn apply_window(output: &mut [f32], input: &[f32]) {
-  let c = common();
+  let c: &CommonState = common();
   for (x, &y, &w) in util::zip3(output, input, &c.window[..]) {
     *x = y * w;
   }
 }
 
 fn apply_window_in_place(xs: &mut [f32]) {
-  let c = common();
+  let c: &CommonState = common();
   for (x, &w) in xs.iter_mut().zip(&c.window[..]) {
     *x *= w;
   }
