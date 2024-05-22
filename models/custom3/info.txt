@@ -2,7 +2,7 @@ SUITE: custom3
 
 INTENT:
 
-General use in a reasonable recording environment. Fans, AC, computers, etc.
+General use in a noisy recording environment.
 
 
 SIGNAL:
@@ -38,7 +38,18 @@ music
         https://incompetech.com/music/royalty-free/
 
 
+./chopper voice/hamlet-002-act-1-scene-1.1626.raw voice/human_rights_un_chi_nf.raw sounds/cough.raw voice/human_rights_un_cze_msed.raw voice/huntingofthesnark_01_carrol_128kb.raw sounds/laugh.raw voice/teacupclub_01_armstrong_128kb.raw voice/warletters_01_allan_128kb.raw voice/TSPspeech.raw sounds/cough.raw music/Danse\ Macabre.raw music/Gymnopedie\ No\ 1.raw music/Local\ Forecast.raw sounds/laugh.raw music/Secret\ of\ Tiki\ Island.raw music/Unpromised.raw
+
+
 NOISE:
 
-rnnoise_contributions (only "other" and "none" samples)
+rnnoise_contributions
     https://people.xiph.org/~jm/demo/rnnoise/rnnoise_contributions.tar.gz
+
+
+./noise-chopper *.raw
+
+
+COUNT: 10000000 (x87)
+
+NOTE: All files processed into correct raws through ffmpeg: ffmpeg -i in -f s16le -ac 1 -ar 48000 out.raw
